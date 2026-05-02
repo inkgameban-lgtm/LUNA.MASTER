@@ -1,11 +1,10 @@
 -- ============================================
---           🌙 luna.master
---      Blox Fruits | Mobile Ultimate
+--           🌙 luna.master v2.0
+--      Blox Fruits | Quest AutoFarm
 -- ============================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -14,6 +13,7 @@ local rootPart = character:WaitForChild("HumanoidRootPart")
 
 local farming = false
 local flying = false
+local currentTab = "farm"
 
 -- Авто-респавн
 player.CharacterAdded:Connect(function(char)
@@ -23,20 +23,88 @@ player.CharacterAdded:Connect(function(char)
 end)
 
 -- ============================================
---              ФУНКЦИИ
+--         БАЗА КВЕСТОВ ПО УРОВНЯМ
 -- ============================================
 
--- Поиск ближайшего моба
-local function getNearestMob()
+local QuestData = {
+    -- Sea 1
+    { minLvl = 1,   maxLvl = 14,  mob = "Bandit",            quest = "Bandit",          pos = Vector3.new(977, 10, 1430)  },
+    { minLvl = 15,  maxLvl = 29,  mob = "Monkey",            quest = "Monkey",          pos = Vector3.new(1234, 10, 1500) },
+    { minLvl = 30,  maxLvl = 59,  mob = "Gorilla",           quest = "Gorilla",         pos = Vector3.new(1400, 10, 1600) },
+    { minLvl = 60,  maxLvl = 89,  mob = "Pirate",            quest = "Pirate",          pos = Vector3.new(1000, 10, 1200) },
+    { minLvl = 90,  maxLvl = 119, mob = "Tough Customer",    quest = "Tough Customer",  pos = Vector3.new(800,  10, 900)  },
+    { minLvl = 120, maxLvl = 149, mob = "Desert Bandit",     quest = "Desert Bandit",   pos = Vector3.new(600,  10, 700)  },
+    { minLvl = 150, maxLvl = 174, mob = "Desert Officer",    quest = "Desert Officer",  pos = Vector3.new(500,  10, 600)  },
+    { minLvl = 175, maxLvl = 224, mob = "Snow Trooper",      quest = "Snow Trooper",    pos = Vector3.new(200,  10, 300)  },
+    { minLvl = 225, maxLvl = 299, mob = "Winter Warrior",    quest = "Winter Warrior",  pos = Vector3.new(100,  10, 200)  },
+    { minLvl = 300, maxLvl = 374, mob = "Fishman Warrior",   quest = "Fishman Warrior", pos = Vector3.new(-500, 10, -400) },
+    { minLvl = 375, maxLvl = 449, mob = "Fishman Elder",     quest = "Fishman Elder",   pos = Vector3.new(-600, 10, -500) },
+    { minLvl = 450, maxLvl = 524, mob = "Marine",            quest = "Marine",          pos = Vector3.new(-700, 10, -600) },
+    { minLvl = 525, maxLvl = 624, mob = "Sky Bandit",        quest = "Sky Bandit",      pos = Vector3.new(-800, 50, -700) },
+    { minLvl = 625, maxLvl = 699, mob = "Dark Master",       quest = "Dark Master",     pos = Vector3.new(-900, 50, -800) },
+    -- Sea 2
+    { minLvl = 700, maxLvl = 774, mob = "Punk Hazard",       quest = "Punk Hazard",     pos = Vector3.new(1000, 10, -1000)},
+    { minLvl = 775, maxLvl = 849, mob = "Magma Ninja",       quest = "Magma Ninja",     pos = Vector3.new(1100, 10, -1100)},
+    { minLvl = 850, maxLvl = 924, mob = "Dragon Crew",       quest = "Dragon Crew",     pos = Vector3.new(1200, 10, -1200)},
+    { minLvl = 925, maxLvl = 999, mob = "Zombie",            quest = "Zombie",          pos = Vector3.new(1300, 10, -1300)},
+    -- Sea 3
+    { minLvl = 1000, maxLvl = 1099, mob = "Forest Pirate",   quest = "Forest Pirate",   pos = Vector3.new(2000, 10, 2000) },
+    { minLvl = 1100, maxLvl = 1199, mob = "Jungle Pirate",   quest = "Jungle Pirate",   pos = Vector3.new(2100, 10, 2100) },
+    { minLvl = 1200, maxLvl = 1299, mob = "Musketeer",       quest = "Musketeer",       pos = Vector3.new(2200, 10, 2200) },
+    { minLvl = 1300, maxLvl = 1499, mob = "Wysper",          quest = "Wysper",          pos = Vector3.new(2300, 10, 2300) },
+    { minLvl = 1500, maxLvl = 1699, mob = "Ice Admiral",     quest = "Ice Admiral",     pos = Vector3.new(2400, 10, 2400) },
+    { minLvl = 1700, maxLvl = 1999, mob = "Cursed Pirate",   quest = "Cursed Pirate",   pos = Vector3.new(2500, 10, 2500) },
+    { minLvl = 2000, maxLvl = 2299, mob = "Demonic Soul",    quest = "Demonic Soul",    pos = Vector3.new(2600, 10, 2600) },
+    { minLvl = 2300, maxLvl = 9999, mob = "Pirate Officer",  quest = "Pirate Officer",  pos = Vector3.new(2700, 10, 2700) },
+}
+
+-- Получить квест по уровню
+local function getQuestForLevel(lvl)
+    for _, data in ipairs(QuestData) do
+        if lvl >= data.minLvl and lvl <= data.maxLvl then
+            return data
+        end
+    end
+    return QuestData[#QuestData]
+end
+
+-- Получить уровень игрока
+local function getLevel()
+    local stats = player:FindFirstChild("leaderstats") or player:FindFirstChild("Data")
+    if stats then
+        local lvl = stats:FindFirstChild("Level") or stats:FindFirstChild("Lvl")
+        if lvl then return lvl.Value end
+    end
+    return 1
+end
+
+-- ============================================
+--              БОЕВЫЕ ФУНКЦИИ
+-- ============================================
+
+-- Ближний бой (melee)
+local function meleeAttack()
+    -- Симуляция клика (ближний бой)
+    pcall(function()
+        mouse1press()
+        task.wait(0.03)
+        mouse1release()
+    end)
+end
+
+-- Поиск моба по имени
+local function findMobByName(name)
     local nearest, minDist = nil, math.huge
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("Humanoid") and obj.Health > 0 and obj.Parent ~= character then
-            local root = obj.Parent:FindFirstChild("HumanoidRootPart")
-            if root then
-                local dist = (rootPart.Position - root.Position).Magnitude
-                if dist < minDist then
-                    minDist = dist
-                    nearest = obj.Parent
+            if string.find(obj.Parent.Name, name) or name == "any" then
+                local root = obj.Parent:FindFirstChild("HumanoidRootPart")
+                if root then
+                    local dist = (rootPart.Position - root.Position).Magnitude
+                    if dist < minDist then
+                        minDist = dist
+                        nearest = obj.Parent
+                    end
                 end
             end
         end
@@ -52,15 +120,29 @@ local function tpToMob(mob)
     end
 end
 
--- Атака
-local function attack()
-    local tool = character:FindFirstChildOfClass("Tool")
-    if tool then
-        local remote = tool:FindFirstChildOfClass("RemoteEvent")
-        if remote then pcall(function() remote:FireServer() end) end
+-- Телепорт к позиции
+local function tpToPos(pos)
+    rootPart.CFrame = CFrame.new(pos)
+end
+
+-- Принять квест (поиск NPC квеста)
+local function acceptQuest(questName)
+    for _, npc in ipairs(workspace:GetDescendants()) do
+        if npc:IsA("Model") and string.find(npc.Name, "Quest") then
+            local root = npc:FindFirstChild("HumanoidRootPart")
+            if root then
+                rootPart.CFrame = CFrame.new(root.Position + Vector3.new(0, 2, -4))
+                task.wait(0.3)
+                -- Взаимодействие с NPC
+                local clickDetector = root:FindFirstChildOfClass("ClickDetector")
+                    or npc:FindFirstChildOfClass("ClickDetector")
+                if clickDetector then
+                    pcall(function() fireclickdetector(clickDetector) end)
+                end
+                break
+            end
+        end
     end
-    -- Симуляция клика
-    pcall(function() mouse1press() task.wait(0.02) mouse1release() end)
 end
 
 -- Полёт
@@ -88,27 +170,37 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- Быстрый автофарм
+-- Главный цикл квест-фарма
+local statusText = ""
 task.spawn(function()
     while true do
         task.wait(0.03)
         if farming and humanoid and humanoid.Health > 0 then
-            local mob, dist = getNearestMob()
+            local lvl = getLevel()
+            local quest = getQuestForLevel(lvl)
+            statusText = "Lv."..lvl.." → "..quest.mob
+
+            local mob, dist = findMobByName(quest.mob)
+
             if mob then
                 if dist > 10 then
                     tpToMob(mob)
                     task.wait(0.05)
                 end
-                attack()
+                meleeAttack()
             else
+                -- Мобов нет — телепорт в зону
+                tpToPos(quest.pos)
                 task.wait(0.5)
             end
+        else
+            statusText = "Ожидание..."
         end
     end
 end)
 
 -- ============================================
---              GUI
+--              GUI ДИЗАЙН
 -- ============================================
 
 local gui = Instance.new("ScreenGui")
@@ -116,105 +208,274 @@ gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.Parent = player.PlayerGui
 
--- Водяной знак
-local wm = Instance.new("Frame")
-wm.Size = UDim2.new(0, 180, 0, 36)
-wm.Position = UDim2.new(0.5, -90, 0, 12)
-wm.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
-wm.BackgroundTransparency = 0.2
-wm.BorderSizePixel = 0
-wm.Parent = gui
-Instance.new("UICorner", wm).CornerRadius = UDim.new(0, 10)
+-- Фон главного окна
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 320, 0, 420)
+mainFrame.Position = UDim2.new(0.5, -160, 0.5, -210)
+mainFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 18)
+mainFrame.BackgroundTransparency = 0.05
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = gui
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 16)
 
-local wmLabel = Instance.new("TextLabel")
-wmLabel.Size = UDim2.new(1, 0, 1, 0)
-wmLabel.BackgroundTransparency = 1
-wmLabel.TextColor3 = Color3.fromRGB(180, 140, 255)
-wmLabel.Font = Enum.Font.GothamBold
-wmLabel.TextScaled = true
-wmLabel.Text = "🌙 luna.master"
-wmLabel.Parent = wm
+-- Обводка
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(120, 60, 220)
+stroke.Thickness = 1.5
+stroke.Parent = mainFrame
 
--- Градиент водяного знака
+-- Шапка
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 50)
+header.BackgroundColor3 = Color3.fromRGB(14, 8, 30)
+header.BorderSizePixel = 0
+header.Parent = mainFrame
+Instance.new("UICorner", header).CornerRadius = UDim.new(0, 16)
+
 local grad = Instance.new("UIGradient")
 grad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 100, 255)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 180, 255)),
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 30, 220)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(30, 100, 255)),
 })
-grad.Parent = wmLabel
+grad.Rotation = 90
+grad.Parent = header
 
--- Панель кнопок
-local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 340, 0, 80)
-panel.Position = UDim2.new(0.5, -170, 1, -100)
-panel.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
-panel.BackgroundTransparency = 0.3
-panel.BorderSizePixel = 0
-panel.Parent = gui
-Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 14)
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 1, 0)
+title.BackgroundTransparency = 1
+title.TextColor3 = Color3.new(1, 1, 1)
+title.Font = Enum.Font.GothamBold
+title.TextScaled = true
+title.Text = "🌙 luna.master"
+title.Parent = header
 
-local layout = Instance.new("UIListLayout")
-layout.FillDirection = Enum.FillDirection.Horizontal
-layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-layout.VerticalAlignment = Enum.VerticalAlignment.Center
-layout.Padding = UDim.new(0, 10)
-layout.Parent = panel
+-- Кнопка закрыть
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 36, 0, 36)
+closeBtn.Position = UDim2.new(1, -42, 0, 7)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 40, 60)
+closeBtn.TextColor3 = Color3.new(1,1,1)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Text = "✕"
+closeBtn.TextScaled = true
+closeBtn.BorderSizePixel = 0
+closeBtn.ZIndex = 10
+closeBtn.Parent = mainFrame
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
+closeBtn.MouseButton1Click:Connect(function() mainFrame.Visible = false end)
+closeBtn.TouchTap:Connect(function() mainFrame.Visible = false end)
 
-local function makeBtn(text, colorOn, colorOff, callback)
+-- Открыть снова
+local openBtn = Instance.new("TextButton")
+openBtn.Size = UDim2.new(0, 44, 0, 44)
+openBtn.Position = UDim2.new(0, 10, 0.5, -22)
+openBtn.BackgroundColor3 = Color3.fromRGB(100, 30, 220)
+openBtn.TextColor3 = Color3.new(1,1,1)
+openBtn.Font = Enum.Font.GothamBold
+openBtn.Text = "🌙"
+openBtn.TextScaled = true
+openBtn.BorderSizePixel = 0
+openBtn.Parent = gui
+Instance.new("UICorner", openBtn).CornerRadius = UDim.new(1, 0)
+openBtn.MouseButton1Click:Connect(function() mainFrame.Visible = true end)
+openBtn.TouchTap:Connect(function() mainFrame.Visible = true end)
+
+-- Таб-кнопки
+local tabFrame = Instance.new("Frame")
+tabFrame.Size = UDim2.new(1, -20, 0, 40)
+tabFrame.Position = UDim2.new(0, 10, 0, 58)
+tabFrame.BackgroundColor3 = Color3.fromRGB(20, 12, 40)
+tabFrame.BorderSizePixel = 0
+tabFrame.Parent = mainFrame
+Instance.new("UICorner", tabFrame).CornerRadius = UDim.new(0, 10)
+
+local tabLayout = Instance.new("UIListLayout")
+tabLayout.FillDirection = Enum.FillDirection.Horizontal
+tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+tabLayout.Padding = UDim.new(0, 6)
+tabLayout.Parent = tabFrame
+
+-- Контент-панели
+local pages = {}
+
+local function makePage()
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(1, -20, 0, 300)
+    f.Position = UDim2.new(0, 10, 0, 105)
+    f.BackgroundTransparency = 1
+    f.Visible = false
+    f.Parent = mainFrame
+    return f
+end
+
+local function makeTab(name, icon)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 145, 0, 58)
-    btn.BackgroundColor3 = colorOff
-    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Size = UDim2.new(0, 88, 0, 30)
+    btn.BackgroundColor3 = Color3.fromRGB(30, 18, 55)
+    btn.TextColor3 = Color3.fromRGB(180, 150, 255)
     btn.Font = Enum.Font.GothamBold
     btn.TextScaled = true
-    btn.Text = text .. "\nOFF"
+    btn.Text = icon.." "..name
     btn.BorderSizePixel = 0
-    btn.Parent = panel
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+    btn.Parent = tabFrame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    local page = makePage()
+    pages[name] = {btn = btn, page = page}
+    return btn, page
+end
+
+local function switchTab(name)
+    currentTab = name
+    for k, v in pairs(pages) do
+        if k == name then
+            v.btn.BackgroundColor3 = Color3.fromRGB(100, 40, 220)
+            v.btn.TextColor3 = Color3.new(1,1,1)
+            v.page.Visible = true
+        else
+            v.btn.BackgroundColor3 = Color3.fromRGB(30, 18, 55)
+            v.btn.TextColor3 = Color3.fromRGB(180, 150, 255)
+            v.page.Visible = false
+        end
+    end
+end
+
+local farmBtn, farmPage = makeTab("Farm", "🌾")
+local flyBtn2, flyPage = makeTab("Fly", "✈️")
+local tpBtn2, tpPage = makeTab("TP", "⚡")
+
+farmBtn.MouseButton1Click:Connect(function() switchTab("Farm") end)
+farmBtn.TouchTap:Connect(function() switchTab("Farm") end)
+flyBtn2.MouseButton1Click:Connect(function() switchTab("Fly") end)
+flyBtn2.TouchTap:Connect(function() switchTab("Fly") end)
+tpBtn2.MouseButton1Click:Connect(function() switchTab("TP") end)
+tpBtn2.TouchTap:Connect(function() switchTab("TP") end)
+
+-- Утилита: большая кнопка
+local function bigToggle(parent, text, onColor, offColor, yPos, onToggle)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 56)
+    btn.Position = UDim2.new(0, 0, 0, yPos)
+    btn.BackgroundColor3 = offColor
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextScaled = true
+    btn.Text = text.."\nOFF"
+    btn.BorderSizePixel = 0
+    btn.Parent = parent
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 12)
 
     local state = false
     local function toggle()
         state = not state
-        btn.Text = text .. (state and "\nON" or "\nOFF")
-        btn.BackgroundColor3 = state and colorOn or colorOff
-        callback(state)
+        btn.Text = text..(state and "\nON ✅" or "\nOFF")
+        btn.BackgroundColor3 = state and onColor or offColor
+        onToggle(state)
     end
-
-    btn.TouchTap:Connect(toggle)
     btn.MouseButton1Click:Connect(toggle)
+    btn.TouchTap:Connect(toggle)
     return btn
 end
 
--- Кнопка AutoFarm
-makeBtn("🌾 AutoFarm", Color3.fromRGB(50, 200, 80), Color3.fromRGB(150, 40, 40), function(state)
-    farming = state
-end)
-
--- Кнопка Полёт
-makeBtn("✈️ Полёт", Color3.fromRGB(60, 140, 255), Color3.fromRGB(40, 40, 150), function(state)
-    flying = state
-end)
-
--- Кнопка Телепорт к мобу
-local tpBtn = Instance.new("TextButton")
-tpBtn.Size = UDim2.new(0, 145, 0, 58)
-tpBtn.Position = UDim2.new(0.5, -72, 1, -175)
-tpBtn.BackgroundColor3 = Color3.fromRGB(120, 50, 200)
-tpBtn.TextColor3 = Color3.new(1, 1, 1)
-tpBtn.Font = Enum.Font.GothamBold
-tpBtn.TextScaled = true
-tpBtn.Text = "⚡ ТП к мобу"
-tpBtn.BorderSizePixel = 0
-tpBtn.Parent = gui
-Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0, 10)
-
-local function doTp()
-    local mob = getNearestMob()
-    if mob then
-        tpToMob(mob)
-    end
+-- Инфо-лейбл
+local function infoLabel(parent, yPos)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, 0, 0, 36)
+    lbl.Position = UDim2.new(0, 0, 0, yPos)
+    lbl.BackgroundColor3 = Color3.fromRGB(20, 12, 40)
+    lbl.TextColor3 = Color3.fromRGB(200, 180, 255)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextScaled = true
+    lbl.Text = "..."
+    lbl.BorderSizePixel = 0
+    lbl.Parent = parent
+    Instance.new("UICorner", lbl).CornerRadius = UDim.new(0, 8)
+    return lbl
 end
-tpBtn.TouchTap:Connect(doTp)
-tpBtn.MouseButton1Click:Connect(doTp)
 
-print("[luna.master] Загружен ✅")
+-- === TAB: FARM ===
+local statusLbl = infoLabel(farmPage, 0)
+bigToggle(farmPage, "🌾 Quest AutoFarm",
+    Color3.fromRGB(50, 200, 80),
+    Color3.fromRGB(120, 30, 30),
+    44, function(state) farming = state end)
+
+local questLbl = infoLabel(farmPage, 108)
+questLbl.Text = "Квест: ожидание..."
+
+-- Обновление статуса
+RunService.Heartbeat:Connect(function()
+    if statusLbl then
+        statusLbl.Text = "⚔️ "..statusText
+    end
+    if questLbl then
+        local lvl = getLevel()
+        local q = getQuestForLevel(lvl)
+        questLbl.Text = "📋 "..q.quest.." (Lv."..q.minLvl.."-"..q.maxLvl..")"
+    end
+end)
+
+-- === TAB: FLY ===
+bigToggle(flyPage, "✈️ Полёт 150",
+    Color3.fromRGB(60, 140, 255),
+    Color3.fromRGB(30, 40, 120),
+    0, function(state) flying = state end)
+
+local flyInfo = infoLabel(flyPage, 64)
+flyInfo.Text = "Лети по направлению камеры"
+
+-- === TAB: TP ===
+local tpInfo = infoLabel(tpPage, 0)
+tpInfo.Text = "Телепорт к ближайшему мобу"
+
+local tpNow = Instance.new("TextButton")
+tpNow.Size = UDim2.new(1, 0, 0, 56)
+tpNow.Position = UDim2.new(0, 0, 0, 44)
+tpNow.BackgroundColor3 = Color3.fromRGB(120, 40, 220)
+tpNow.TextColor3 = Color3.new(1,1,1)
+tpNow.Font = Enum.Font.GothamBold
+tpNow.TextScaled = true
+tpNow.Text = "⚡ ТП к мобу"
+tpNow.BorderSizePixel = 0
+tpNow.Parent = tpPage
+Instance.new("UICorner", tpNow).CornerRadius = UDim.new(0, 12)
+
+local doTp = function()
+    local lvl = getLevel()
+    local q = getQuestForLevel(lvl)
+    local mob = findMobByName(q.mob)
+    if mob then tpToMob(mob)
+    else tpToPos(q.pos) end
+end
+tpNow.MouseButton1Click:Connect(doTp)
+tpNow.TouchTap:Connect(doTp)
+
+local tpZone = Instance.new("TextButton")
+tpZone.Size = UDim2.new(1, 0, 0, 56)
+tpZone.Position = UDim2.new(0, 0, 0, 108)
+tpZone.BackgroundColor3 = Color3.fromRGB(40, 100, 200)
+tpZone.TextColor3 = Color3.new(1,1,1)
+tpZone.Font = Enum.Font.GothamBold
+tpZone.TextScaled = true
+tpZone.Text = "🗺️ ТП в зону квеста"
+tpZone.BorderSizePixel = 0
+tpZone.Parent = tpPage
+Instance.new("UICorner", tpZone).CornerRadius = UDim.new(0, 12)
+
+tpZone.MouseButton1Click:Connect(function()
+    local lvl = getLevel()
+    local q = getQuestForLevel(lvl)
+    tpToPos(q.pos)
+end)
+tpZone.TouchTap:Connect(function()
+    local lvl = getLevel()
+    local q = getQuestForLevel(lvl)
+    tpToPos(q.pos)
+end)
+
+-- Активировать таб Farm по умолчанию
+switchTab("Farm")
+
+print("[luna.master v2.0] Загружен ✅")
